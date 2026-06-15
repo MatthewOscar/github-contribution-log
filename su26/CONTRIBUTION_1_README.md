@@ -1,15 +1,17 @@
-# Contribution 1: Add compatibility test for $median
+# Contribution 1: Extra table header cell incorrectly added
 
 **Contribution Number:** 1  
 **Tech Fellow:** Matthew Wyatt  
-**Issue:** https://github.com/documentdb/functional-tests/issues/194  
-**Status:** Phase I Complete
+**Issue:** https://github.com/phpmyadmin/phpmyadmin/issues/17869  
+**Status:** Phase II Complete
 
 ---
 
 ## Why I Chose This Issue
 
-This issue interests me because it is a good first issue to pick up on a small open source project. I hope to learn more about writing test coverage and working with DocumentDB.
+I chose this issue because it's about fixing a well-scoped, self-contained bug in phpMyAdmin, a mature and widely-used open source tool for administering MySQL and MariaDB databases over the web. The bug is concrete and verifiable: an extra `<th>` cell is incorrectly rendered in a table header, so I can reproduce it visually, trace it back to the rendering logic, and confirm a fix without needing deep prior knowledge of the entire codebase. That makes it an ideal first contribution.
+
+It also lines up well with what I want to learn. Tracking down the bug means working through phpMyAdmin's PHP and Twig-based table-rendering code, and fixing it properly means adding regression test coverage so the extra cell can't reappear. This will allow me to demonstrate the skills (reading an established codebase, debugging UI/rendering output, and writing meaningful tests) I'm hoping to build through this contribution.
 
 ---
 
