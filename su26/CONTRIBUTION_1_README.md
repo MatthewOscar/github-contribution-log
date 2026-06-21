@@ -3,13 +3,13 @@
 **Contribution Number:** 1  
 **Tech Fellow:** Matthew Wyatt  
 **Issue:** https://github.com/phpmyadmin/phpmyadmin/issues/17869  
-**Status:** Phase II Complete
+**Status:** Phase III Complete
 
 ---
 
 ## Why I Chose This Issue
 
-I chose this issue because it's about fixing a well-scoped, self-contained bug in phpMyAdmin, a mature and widely-used open source tool for administering MySQL and MariaDB databases over the web. The bug is concrete and verifiable: an extra `<th>` cell is incorrectly rendered in a table header, so I can reproduce it visually, trace it back to the rendering logic, and confirm a fix without needing deep prior knowledge of the entire codebase. That makes it an ideal first contribution.
+I chose this issue because it's about fixing a well-scoped, self-contained bug in phpMyAdmin, a mature and widely-used open source tool for administering MySQL and MariaDB databases over the web. The bug is concrete and verifiable: an extra, empty cell is incorrectly rendered in a table header, so I can reproduce it visually, trace it back to the rendering logic, and confirm a fix without needing deep prior knowledge of the entire codebase. That makes it an ideal first contribution.
 
 It also lines up well with what I want to learn. Tracking down the bug means working through phpMyAdmin's PHP and Twig-based table-rendering code, and fixing it properly means adding regression test coverage so the extra cell can't reappear. This will allow me to demonstrate the skills (reading an established codebase, debugging UI/rendering output, and writing meaningful tests) I'm hoping to build through this contribution.
 
@@ -31,10 +31,7 @@ In Browse mode an extra empty cell (`<td class="d-print-none">…</td>`) is appe
 
 ### Affected Components
 
-- `libraries/classes/Display/Results.php` — `getColumnAtRightSide()` (≈ lines 1969–2013) builds the right-hand header column. Its `elseif` branch (≈ line 1993) emits the stray empty `<td class="d-print-none">` at line ~2006 when `RowActionLinks` is `left`/`both` and edit/delete links are disabled. A mirror-image branch in `getFieldVisibilityParams()` emits a similar empty `<td>` for the left side at line ~1333.
-- `templates/display/results/table.twig` (lines 210–212) — assembles the `<thead>` row by concatenating `headers.button`, `headers.table_headers_for_columns`, and `headers.column_at_right_side` (the output of the method above).
-- `libraries/config.default.php` (line ~2565) — `$cfg['RowActionLinks'] = 'left'` is the default value that triggers the buggy branch.
-- `test/classes/Display/ResultsTest.php` (line ~1583) — currently asserts the buggy output (`'column_at_right_side' => "\n" . '<td class="d-print-none"></td>'`), so any fix will require updating this expectation.
+The bug lives in `libraries/classes/Display/Results.php`: `getColumnAtRightSide()` builds the right-hand header column (its output becomes `headers.column_at_right_side`, which `templates/display/results/table.twig` concatenates into the `<thead>`). Its sibling `getFieldVisibilityParams()` builds the left column the same way. The trigger is the default `$cfg['RowActionLinks'] = 'left'` (`libraries/config.default.php`), and `test/classes/Display/ResultsTest.php` asserts on the header output, so it needs updating alongside the fix.
 
 ---
 
@@ -42,45 +39,9 @@ In Browse mode an extra empty cell (`<td class="d-print-none">…</td>`) is appe
 
 ### Environment Setup
 
-I set up phpMyAdmin locally on macOS, targeting the **QA_5_2** branch (phpMyAdmin 5.2.4-dev), since the issue was reported against 5.2.0. (I first stood up `master` / 6.0.0-dev, then switched branches once I decided to work against the reported version.)
+I ran phpMyAdmin locally on macOS on the **QA_5_2** branch (5.2.4-dev), since the issue was reported against 5.2.0. Homebrew supplied the toolchain (PHP 8.5, Composer, Yarn); `composer install` and `yarn install` pulled and built dependencies; and the database was a Dockerized MariaDB container (`root`/`root` on port 3306). After copying `config.sample.inc.php` to `config.inc.php` with a generated `blowfish_secret`, I served the app with `php -S localhost:8000 -t .` (on 5.2 the web root is the repo root) and logged in as `root`. Two snags worth noting: `composer install` first failed on a git "bare repository" safety error while cloning a dependency, which I cleared with a one-off `GIT_CONFIG_*` override (no global git config change); and login failed until I set the server host to `127.0.0.1`, forcing a TCP connection to the container instead of a unix socket. Running PHP 8.5 against a 5.2-era codebase also surfaces deprecation notices, but core functionality worked with no fatal errors.
 
-**Toolchain (Homebrew):**
-```sh
-brew install php composer yarn      # PHP 8.5.7, Composer 2.10.1, Yarn 1.22.22
-```
-
-**PHP + JS dependencies:**
-```sh
-composer install
-yarn install                        # builds the theme CSS/JS (Sass + Babel on 5.2)
-```
-
-**Database (MariaDB in Docker):**
-```sh
-docker run --name pma-mysql -e MYSQL_ROOT_PASSWORD=root -p 3306:3306 -d mariadb:latest
-```
-
-**Config:**
-```sh
-cp config.sample.inc.php config.inc.php
-openssl rand -hex 16                 # value used for blowfish_secret
-```
-In `config.inc.php` I set `$cfg['blowfish_secret']` to the generated value and changed `$cfg['Servers'][$i]['host']` from `localhost` to `127.0.0.1`, so PHP connects to the Docker container over TCP instead of a unix socket.
-
-**Run** (on 5.2 the web root is the repo root):
-```sh
-php -S localhost:8000 -t .
-```
-Then logged in at http://localhost:8000 with `root` / `root`.
-
-#### Challenges faced
-
-- **`composer install` failed on QA_5_2** with a git "bare repository" error (`fatal: cannot use bare repository ... (safe.bareRepository is 'explicit')`) while cloning the `thecodingmachine/safe` dependency from its cached bare repo. I resolved it with a one-off, scoped git config override that does **not** modify my global git config:
-  ```sh
-  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=all composer install
-  ```
-- **PHP version mismatch:** my machine runs PHP 8.5, but 5.2 officially targets PHP ≤ 8.2, so I expected possible deprecation notices on some screens. Core functionality ran with no fatal errors, so I left it as-is.
-- **Connection over socket vs TCP:** the default `localhost` host made PHP try a unix socket to a non-existent local MySQL; switching the host to `127.0.0.1` forced a TCP connection to the Docker container and fixed login.
+**Working branch:** https://github.com/MatthewOscar/phpmyadmin/tree/fix/17869-extra-table-header-cell
 
 ### Steps to Reproduce
 
@@ -99,31 +60,12 @@ Using the local 5.2.4-dev setup above (stock configuration, so `$cfg['RowActionL
 
 ### Reproduction Evidence
 
-- **Commit showing reproduction:** This isn't a recent regression I can pin to a fork commit since the bug has existed since the feature was first written. The commit where it originally surfaced is [`16843c6`](https://github.com/phpmyadmin/phpmyadmin/commit/16843c684b5d5229343595c68e4331bbc8dc0c3e) (Loïc Chapeaux, 2002-03-03), which first introduced the empty placeholder `<td>` in the results header.
-- **Screenshots/logs:** Reproduced locally on phpMyAdmin 5.2.4-dev (Playwright-driven). In each highlighted shot, the stray header cell is outlined in red, the header row is outlined in blue and the first body row in green, making the width mismatch visible.
-
-  `information_schema.COLLATIONS` (matches the report exactly — one extra cell, no colspan):
+- **Commit showing reproduction:** Not a recent regression — the empty placeholder `<td>` has existed since [`16843c6`](https://github.com/phpmyadmin/phpmyadmin/commit/16843c684b5d5229343595c68e4331bbc8dc0c3e) (Loïc Chapeaux, 2002-03-03). A [comment on the issue](https://github.com/phpmyadmin/phpmyadmin/issues/17869#issuecomment-1313569075) traces the same lineage (2002 → the 2012 method-split → today).
+- **Screenshots/logs:** Reproduced on 5.2.4-dev via Playwright. In each shot the stray header cell is outlined in red, the header row in blue and the first body row in green, making the width mismatch visible — `information_schema.COLLATIONS` matches the report exactly (one extra cell, no colspan); `repro_17869.staff` has a primary key, so the stray cell spans the 4 action columns.
 
   ![COLLATIONS browse view with the extra header cell highlighted](assets/repro-17869-collations-highlighted.png)
-
-  `repro_17869.staff` (primary key present, so the stray cell spans the 4 action columns):
-
   ![staff browse view with the extra header cell highlighted](assets/repro-17869-staff-highlighted.png)
-
-  Unannotated reference shot of the `staff` browse view: [assets/repro-17869-staff-clean.png](assets/repro-17869-staff-clean.png)
-
-  The mismatch was confirmed in the DOM, not just by eye. Running this in the browser console on the `COLLATIONS` page:
-  ```js
-  const t = document.querySelector('table.table_results');
-  t.querySelectorAll('thead tr')[0].children.length;  // => 9
-  t.querySelector('tbody tr').children.length;         // => 8
-  t.querySelectorAll('thead td')[0].outerHTML;         // => '<td class="d-print-none"><span></span></td>'
-  ```
-  Note on the `<span>`: the server-side PHP emits an *empty* `<td class="d-print-none"></td>` (no span). The inner `<span></span>` is added by phpMyAdmin's client-side JS, which wraps every header/data cell's content in a `<span>` for the column drag/resize feature — which is why the original report shows `<span></span>` even though it isn't in the rendered server markup.
-- **My findings:** Walking the file's git history (a trail also pointed out in [this comment on the issue](https://github.com/phpmyadmin/phpmyadmin/issues/17869#issuecomment-1313569075)) shows the stray empty cell is over two decades old and survived several refactors intact:
-  - [`16843c6`](https://github.com/phpmyadmin/phpmyadmin/commit/16843c6#diff-7b9a476426ac829a8aacf9901ba4cd3d0e6f75fe067defa00be7e5c258f9c6f7R662) — *Loïc Chapeaux, 2002-03-03.* Where the empty placeholder `<td>` was first introduced (part of feature request #503015, "No 'xxxtext' button on vertical mode"). This is the origin the issue comment refers to as "21 years ago."
-  - [`37d50c1`](https://github.com/phpmyadmin/phpmyadmin/commit/37d50c1#diff-98f45ff6ce5760b40756ed7ce67dc0b880e8ba55f1298d7c79bd7bb8b49a3d60R671-R685) — *Alexander M. Turek, 2003-11-26 ("Huge set of optimizations").* The empty-cell logic is carried forward unchanged.
-  - [`76409e2`](https://github.com/phpmyadmin/phpmyadmin/commit/76409e2#diff-401fa9ac455f80ecd82d75155b189c586eadf55f976b2050915d031eaf79a39dR2050-R2065) — *Chanaka Indrajith, 2012-07-04.* The 3.5.x-era refactor that broke `_getTableHeaders()` into smaller helper functions (the ancestors of today's `getColumnAtRightSide()`); the empty `<td>` survives the refactor, which is why the bug is present as far back as phpMyAdmin 3.5.0.
+- **My findings:** Checking the DOM on `information_schema.COLLATIONS`, the `<thead>` had **9** cells against **8** per body row — the extra one being `<td class="d-print-none"><span></span></td>`, matching the report verbatim. (The inner `<span>` is added by phpMyAdmin's JS, not the server, which emits an empty `<td>`.) It appeared even on this keyless, action-less view, which is what pointed me at the `$cfg['RowActionLinks']`/operator-precedence cause rather than the theme the reporter suspected.
 
 ---
 
@@ -131,59 +73,37 @@ Using the local 5.2.4-dev setup above (stock configuration, so `$cfg['RowActionL
 
 ### Analysis
 
-The extra cell is produced entirely server-side by `getColumnAtRightSide()` in `libraries/classes/Display/Results.php` — the method whose output becomes `headers.column_at_right_side` in `templates/display/results/table.twig`. It builds the right-hand action-column header in two branches, and the second (`elseif`) branch emits the stray cell. Its guard condition is malformed:
+The extra cell comes entirely from `getColumnAtRightSide()`, whose `elseif` branch emits the right-side placeholder. Its guard was malformed in three ways:
 
-```php
-} elseif (
-    ($GLOBALS['cfg']['RowActionLinks'] === self::POSITION_LEFT)        // (1) wrong side
-    || ($GLOBALS['cfg']['RowActionLinks'] === self::POSITION_BOTH)
-    && (($displayParts['edit_lnk'] === self::NO_EDIT_OR_DELETE)        // (2) && binds before ||
-    && ($displayParts['del_lnk'] === self::NO_EDIT_OR_DELETE))
-    && (! isset($GLOBALS['is_header_sent']) || ! $GLOBALS['is_header_sent'])
-) {
-    $rightColumnHtml .= "\n" . '<td class="d-print-none"' . $colspan . '></td>';   // (3) <td> in <thead>
-}
-```
+1. **Operator precedence:** the condition read `($cfg === LEFT) || ($cfg === BOTH) && (…)`, and since `&&` binds tighter than `||` in PHP it parses as `LEFT || (BOTH && …)`. With the default `'left'`, that first term alone makes it true, so the cell is emitted on every Browse view regardless of the other checks.
+2. **Wrong side:** it keyed off `POSITION_LEFT` at all — but this is the *right*-side builder, and a left-only layout has no matching right-side body cell, so the header ends up one column wider.
+3. **Invalid markup:** the emitted cell was a `<td>` inside `<thead>`; header cells should be `<th>`.
 
-Because `&&` binds tighter than `||` in PHP, this parses as `A || (B && C && D)`, where `A` is `RowActionLinks === 'left'`. With the default `'left'` setting `A` is `true`, so the whole condition is `true` regardless of the edit/delete/header-sent checks, and the empty cell is emitted on every Browse view. But left-positioned row actions mean the body has no right-side action column, so the header ends up one (effective) column wider than each data row. This is exactly what the reproduction shows: on `information_schema.COLLATIONS` (all row actions disabled) the cell *still* appears, which is only possible if the edit/delete sub-checks are being bypassed.
-
-So there are three compounding defects:
-
-1. **Wrong side:** the branch keys off `POSITION_LEFT`, but this is the *right*-side column builder — a left-only layout should produce nothing here.
-2. **Operator precedence:** the missing parentheses around the position test create the `A || (…)` short-circuit, so the guard is effectively "always true when `RowActionLinks === 'left'`."
-3. **Invalid markup:** when the cell *is* emitted it's a `<td>` inside `<thead>`; header rows should contain only `<th>`.
-
-The smoking gun is the sibling method right above it. The **left**-side builder, `getFieldVisibilityParams()` (lines ~1293–1343), is written correctly: it precomputes `$leftOrBoth = (RowActionLinks === POSITION_LEFT) || (RowActionLinks === POSITION_BOTH)` into a variable and then writes `$leftOrBoth && (…)`, which sidesteps the precedence trap entirely. `getColumnAtRightSide()` simply never got the same treatment — it inlines the `||`/`&&` test without grouping it.
+The reproduction confirms it: the cell appears even on `information_schema.COLLATIONS`, where all row actions are disabled — only possible if the edit/delete sub-checks are being bypassed. The giveaway is the sibling left-side builder, `getFieldVisibilityParams()`, which is written correctly: it precomputes `$leftOrBoth` into a variable and gates on it, sidestepping the precedence trap. `getColumnAtRightSide()` simply never got the same treatment.
 
 ### Proposed Solution
 
-Refactor `getColumnAtRightSide()` to mirror its already-correct sibling `getFieldVisibilityParams()`:
-
-- Introduce a `$rightOrBoth = (RowActionLinks === POSITION_RIGHT) || (RowActionLinks === POSITION_BOTH)` local and gate both branches on it. This fixes the wrong-side constant *and* the precedence bug in one move, and makes the right-side cell render only when row actions are actually on the right or both sides. A `'left'` (default) layout then returns an empty string — no extra header cell, and the header matches the body.
-- Emit the placeholder as `<th class="…">` instead of `<td>` so `<thead>` contains only header cells. (The same `<td>`-in-`<thead>` pattern exists in the left builder at line ~1333, worth cleaning up for symmetry.)
-- Update the now-stale unit-test expectation at `test/classes/Display/ResultsTest.php:1583`, which currently asserts the buggy `'<td class="d-print-none"></td>'` output.
-
-I'll confirm the exact `edit_lnk`/`del_lnk` sub-condition for the empty-placeholder branch empirically rather than copy it blindly, since the right builder currently checks the *inverse* of what the left builder checks (`edit === NO && del === NO` vs. the left side's `edit != NO || del != NO`).
+Mirror the correctly-written sibling: introduce `$rightOrBoth = (RowActionLinks === RIGHT) || (RowActionLinks === BOTH)` and gate both branches on it. That fixes the wrong-side constant *and* the precedence bug at once, so a `'left'` layout produces no right-side cell and the header matches the body. The emitted placeholder also becomes a `<th>` (valid `<thead>` markup), and the stale `ResultsTest` expectation is updated to match. I confirmed the correct condition against the body's own rendering — the body emits a right-side action cell only when `(edit or delete enabled) && (right or both)` — so the header now follows the same rule. As a separate, follow-up commit I also switched the left builder's empty placeholder from `<td>` to `<th>` for the same validity reason (see Implementation Notes).
 
 ### Implementation Plan
 
 Using UMPIRE framework (adapted):
 
-**Understand:** In Browse mode the results `<thead>` gains one extra cell on the right that the body rows lack, because `getColumnAtRightSide()` emits a stray `<td class="d-print-none">` whenever `$cfg['RowActionLinks']` is `'left'` (the default). Verified on 5.2.4-dev against both a custom keyed table and the keyless `information_schema.COLLATIONS` view.
+**Understand:** In Browse mode the results `<thead>` gains one extra cell on the right that the body rows lack, because `getColumnAtRightSide()` emits a stray `<td>` whenever `$cfg['RowActionLinks']` is `'left'` (the default).
 
-**Match:** The correctly-written sibling `getFieldVisibilityParams()` in the same file is the template — it guards its branches with a precomputed `$leftOrBoth` boolean and so avoids the precedence pitfall. I'll mirror that with a `$rightOrBoth` guard.
+**Match:** The sibling `getFieldVisibilityParams()` in the same file is the template — it guards its branches with a precomputed `$leftOrBoth` boolean and avoids the precedence trap. I mirrored that with a `$rightOrBoth` guard.
 
 **Plan:**
-1. In `getColumnAtRightSide()` (`libraries/classes/Display/Results.php`), add a `$rightOrBoth` local and rewrite both branch conditions to use it (fixing the wrong constant + precedence).
-2. Change the emitted placeholder from `<td class="d-print-none">` to `<th class="…">` for valid `<thead>` markup.
-3. Update `ResultsTest.php` (line ~1583) and add a regression assertion that the rendered header cell count equals the body cell count.
-4. (Consistency) apply the same `<td>`→`<th>` cleanup to the left builder at line ~1333.
+1. In `getColumnAtRightSide()`, add a `$rightOrBoth` guard and rewrite both branch conditions (fixing the wrong constant + precedence).
+2. Emit the placeholder as `<th>` instead of `<td>`.
+3. Update `ResultsTest` and add a regression test asserting the right-side header is empty for `left`/`none` and a `<th>` for `right`/`both`.
+4. As a separate commit, apply the same `<td>`→`<th>` cleanup to the left builder.
 
-**Implement:** https://github.com/MatthewOscar/phpmyadmin/tree/QA_5_2
+**Implement:** https://github.com/MatthewOscar/phpmyadmin/tree/fix/17869-extra-table-header-cell
 
-**Review:** Follow phpMyAdmin's `CONTRIBUTING` guidelines — run the project's static analysis and linters (`composer run phpcs` / `phpstan`, and the JS lints), keep the diff minimal and focused, add a changelog entry if required, and reference issue #17869 in the PR.
+**Review:** Followed phpMyAdmin's `CONTRIBUTING` — a DCO `Signed-off-by` on each commit, `composer phpcs` clean, a minimal focused diff, a ChangeLog entry, and the PR targeting the QA_5_2 maintenance branch.
 
-**Evaluate:** Re-run the Playwright/DOM check across the `RowActionLinks` matrix (`left` / `right` / `both` / `none`) × (table with primary key / view without one) and confirm in every case that the header cell count equals the body cell count and that no `<td>` remains inside `<thead>`; run the PHPUnit suite (`ResultsTest`) and confirm the updated/added assertions pass.
+**Evaluate:** Re-ran the Playwright/DOM check across the `RowActionLinks` matrix (`left`/`right`/`both`/`none`) on a keyed and a keyless table, confirming header cell count equals body cell count and no `<td>` remains in `<thead>`; the PHPUnit suite passes.
 
 ---
 
@@ -191,36 +111,44 @@ Using UMPIRE framework (adapted):
 
 ### Unit Tests
 
-- [ ] Test case 1: [Description]
-- [ ] Test case 2: [Description]
-- [ ] Test case 3: [Description]
+- [x] `testGetTable` — updated the `column_at_right_side` expectation from the stray `<td>` to `''`, locking in that a default (`left`) layout produces no right-side header cell.
+- [x] `testGetColumnAtRightSideMatchesRowActionPosition` (new) — calls `getColumnAtRightSide()` across all four `RowActionLinks` values: asserts `''` for `left`/`none`, and a `<th>` (never a `<td>`) for `right`/`both`.
+- [x] Full `ResultsTest` suite green (57 tests) with no other changes needed.
 
 ### Integration Tests
 
-- [ ] Integration scenario 1
-- [ ] Integration scenario 2
+phpMyAdmin's automated coverage here is unit-level; end-to-end behavior was verified manually in the browser (below).
 
 ### Manual Testing
 
-[What you tested manually and results]
+Drove the running 5.2.4-dev instance with Playwright and inspected the rendered DOM:
+- `information_schema.COLLATIONS` (keyless, default `left`): the `<thead>` now has **8** cells = **8** body cells, with **zero** `<td>` inside `<thead>` — the extra cell is gone.
+- `repro_17869.staff` (keyed) with `RowActionLinks = both`: header **12** = body **12**, and the right-side action column still renders correctly as a `<th>` — confirming the fix doesn't break the legitimate right/both case.
+
+![COLLATIONS browse view after the fix — header aligned, no extra cell](assets/repro-17869-collations-fixed.png)
 
 ---
 
 ## Implementation Notes
 
-### Week [X] Progress
+### Week 3 Progress
 
-[What you built this week, challenges faced, decisions made]
+**What I built:** Branched off the latest upstream `QA_5_2` and rewrote `getColumnAtRightSide()` to mirror its correct sibling — a `$rightOrBoth` guard on both branches — which removes the stray header cell for `left`/`none` layouts and emits the placeholder as a `<th>`. Updated the stale `ResultsTest` expectation, added a regression test across all four `RowActionLinks` positions, and added a ChangeLog entry. In a second commit I switched the left builder's empty placeholder from `<td>` to `<th>` for the same HTML-validity reason.
 
-### Week [Y] Progress
+**Challenges / decisions:**
+- Before touching decades-old code I investigated the left-side `<td>`: it dates to phpMyAdmin's 2001 initial revision, was never deliberate, and — importantly — the header-reading JS (`makegrid.js`) already selects header cells via `thead th`, so a `<td>` there is silently skipped. That made the `<th>` switch a small correctness gain, not just cosmetics. I kept it as a separate commit so a reviewer can drop it independently.
+- I confirmed the exact branch condition against the body's own rendering rather than copying it, since the right and left builders had been checking inverse edit/delete conditions.
+- Local static analysis is limited by my PHP 8.5 (the project targets ≤ 8.1): `composer phpcs` and a file-scoped PHPStan run are clean, but the full PHPStan/Psalm runs flood with PHP-version deprecation noise (Psalm 4.x even crashes), so I'm leaning on the project's CI for those.
 
-[Continue documenting as you work]
+**Commits this week:**
+- [`e36ab18`](https://github.com/MatthewOscar/phpmyadmin/commit/e36ab18e90883fafa80c0c0dfa85e0c895219124) — Fix #17869: remove the extra header cell (`$rightOrBoth` guard + `<th>`), update + add tests, ChangeLog.
+- [`7041e24`](https://github.com/MatthewOscar/phpmyadmin/commit/7041e24103d8e626534b6c02d631b61923a88252) — Use `<th>` for the left-side empty header placeholder.
 
 ### Code Changes
 
-- **Files modified:** [List]
-- **Key commits:** [Links to important commits]
-- **Approach decisions:** [Why you chose certain approaches]
+- **Files modified:** `libraries/classes/Display/Results.php`, `test/classes/Display/ResultsTest.php`, `ChangeLog`
+- **Key commits:** `e36ab18e90` (the fix) and `7041e24103` (left-side `<th>`)
+- **Approach decisions:** Mirrored the already-correct sibling method rather than inventing a new condition; verified the condition against both the body's rendering and the JS's `thead th` selectors; kept the markup-consistency change in its own commit so it can be reviewed (or dropped) on its own.
 
 ---
 
